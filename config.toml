@@ -1,5 +1,5 @@
-package = "bash"
-version = "5.2.21-2ubuntu4"
-url_or_path = "https://archive.ubuntu.com/ubuntu"
-test_mode = false
-filter_substring = "dummy"
+package = "A"
+version = ""
+url_or_path = "test_graph.txt"
+test_mode = true
+filter_substring = "X"
