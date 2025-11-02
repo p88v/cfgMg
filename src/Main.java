@@ -37,6 +37,7 @@ public class Main {
             String version = config.getOrDefault("version", "");
             String urlOrPath = config.get("url_or_path");
             String filterSubstring = config.get("filter_substring");
+            boolean showLoadOrder = Boolean.parseBoolean(config.getOrDefault("show_load_order", "false"));
 
             if (!testMode && version.isEmpty()) {
                 throw new IllegalArgumentException("Параметр 'version' не может быть пустым для реального режима.");
@@ -66,6 +67,25 @@ public class Main {
             System.out.println("Транзитивный граф зависимостей от " + root + ":");
             for (Map.Entry<String, List<String>> entry : transitiveGraph.entrySet()) {
                 System.out.println(entry.getKey() + " -> " + entry.getValue());
+            }
+
+            // Режим вывода порядка загрузки
+            if (showLoadOrder) {
+                List<String> loadOrder = calculateLoadOrder(root, transitiveGraph);
+                System.out.println("\nПорядок загрузки зависимостей для " + root + ":");
+                for (int i = 0; i < loadOrder.size(); i++) {
+                    System.out.println((i + 1) + ". " + loadOrder.get(i));
+                }
+
+                // Сравнение с реальным менеджером пакетов (для информации)
+                System.out.println("\nПримечание: Реальный менеджер пакетов (apt) может использовать");
+                System.out.println("другие алгоритмы разрешения зависимостей и учитывать:");
+                System.out.println("- Конфликты пакетов");
+                System.out.println("- Рекомендуемые зависимости");
+                System.out.println("- Альтернативные зависимости (через |)");
+                System.out.println("- Информацию о версиях");
+                System.out.println("- Предустановленные пакеты");
+                System.out.println("Поэтому возможны расхождения в порядке загрузки.");
             }
 
         } catch (IOException e) {
@@ -173,7 +193,7 @@ public class Main {
     private static Map<String, List<String>> buildTransitiveGraph(String root, Map<String, List<String>> fullGraph, String filterSub) throws CycleDetectedException {
         Map<String, List<String>> transitive = new HashMap<>();
         Set<String> visited = new HashSet<>();
-        Set<String> inQueue = new HashSet<>(); // Для отслеживания узлов, которые уже в очереди
+        Set<String> inQueue = new HashSet<>();
         Queue<String> queue = new LinkedList<>();
 
         queue.add(root);
@@ -183,14 +203,12 @@ public class Main {
             String current = queue.poll();
             inQueue.remove(current);
 
-            // Если узел уже обработан, пропускаем
             if (visited.contains(current)) {
                 continue;
             }
 
             visited.add(current);
 
-            // Если пакет не найден в графе, добавляем его без зависимостей
             if (!fullGraph.containsKey(current)) {
                 transitive.put(current, new ArrayList<>());
                 continue;
@@ -200,7 +218,6 @@ public class Main {
                 List<String> deps = fullGraph.get(current);
                 List<String> filteredDeps = new ArrayList<>();
 
-                // Фильтруем зависимости по подстроке
                 for (String dep : deps) {
                     if (!dep.contains(filterSub)) {
                         filteredDeps.add(dep);
@@ -209,14 +226,11 @@ public class Main {
 
                 transitive.put(current, filteredDeps);
 
-                // Обрабатываем зависимости
                 for (String dep : filteredDeps) {
-                    // Проверяем цикл: если зависимость уже посещена И находится в текущем пути
                     if (visited.contains(dep) && inQueue.contains(dep)) {
                         throw new CycleDetectedException("зависимость " + current + " -> " + dep);
                     }
 
-                    // Добавляем в очередь только если еще не посещали и не в очереди
                     if (!visited.contains(dep) && !inQueue.contains(dep)) {
                         queue.add(dep);
                         inQueue.add(dep);
@@ -225,6 +239,42 @@ public class Main {
             }
         }
         return transitive;
+    }
+
+    private static List<String> calculateLoadOrder(String root, Map<String, List<String>> graph) throws CycleDetectedException {
+        List<String> loadOrder = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        Set<String> tempVisited = new HashSet<>();
+
+        topologicalSort(root, graph, visited, tempVisited, loadOrder);
+        Collections.reverse(loadOrder);
+
+        return loadOrder;
+    }
+
+    private static void topologicalSort(String node, Map<String, List<String>> graph,
+                                        Set<String> visited, Set<String> tempVisited,
+                                        List<String> result) throws CycleDetectedException {
+        if (tempVisited.contains(node)) {
+            throw new CycleDetectedException("Обнаружен цикл при топологической сортировке: " + node);
+        }
+
+        if (visited.contains(node)) {
+            return;
+        }
+
+        tempVisited.add(node);
+
+        // Рекурсивно обрабатываем все зависимости
+        if (graph.containsKey(node)) {
+            for (String dependency : graph.get(node)) {
+                topologicalSort(dependency, graph, visited, tempVisited, result);
+            }
+        }
+
+        tempVisited.remove(node);
+        visited.add(node);
+        result.add(node);
     }
 
     private static String extractField(String stanza, String field) {
@@ -246,10 +296,8 @@ public class Main {
                 inField = true;
                 value.append(line.substring(field.length() + 1).trim());
             } else if (inField && line.startsWith(" ")) {
-                // Многострочное поле - продолжается с пробела
                 value.append(" ").append(line.trim());
             } else if (inField) {
-                // Конец многострочного поля
                 break;
             }
         }
@@ -263,15 +311,11 @@ public class Main {
             return deps;
         }
 
-        // Разделяем по запятым, но учитываем, что могут быть альтернативы через |
         String[] items = dependsStr.split(",\\s*");
         for (String item : items) {
-            // Обрабатываем альтернативы (через |)
             String[] alts = item.split("\\s*\\|\\s*");
             if (alts.length > 0) {
-                // Берем первую альтернативу (самый строгий вариант)
                 String dep = alts[0].trim();
-                // Удаляем информацию о версии в скобках
                 dep = dep.replaceAll("\\s*\\([^)]*\\)", "").trim();
                 if (!dep.isEmpty() && !dep.contains(filterSub)) {
                     deps.add(dep);

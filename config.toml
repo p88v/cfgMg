@@ -1,5 +1,5 @@
 package = "A"
-version = ""
 url_or_path = "test_graph.txt"
 test_mode = true
-filter_substring = "X"
+filter_substring = "skip"
+show_load_order = true
