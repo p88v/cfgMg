@@ -1,5 +1,5 @@
 package = "bash"
-version = "5.2.15-2ubuntu1"
+version = "5.2.21-2ubuntu4"
 url_or_path = "https://archive.ubuntu.com/ubuntu"
-test_mode = true
-filter_substring = "lib"
+test_mode = false
+filter_substring = "dummy"
