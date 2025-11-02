@@ -1,0 +1,7 @@
+package = "web-server"
+url_or_path = "http://archive.ubuntu.com/ubuntu"
+test_mode = false
+version = "1.0"
+filter_substring = "debug"
+generate_mermaid = true
+mermaid_output = "webserver_graph.mmd"

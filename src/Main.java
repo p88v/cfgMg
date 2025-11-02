@@ -38,6 +38,8 @@ public class Main {
             String urlOrPath = config.get("url_or_path");
             String filterSubstring = config.get("filter_substring");
             boolean showLoadOrder = Boolean.parseBoolean(config.getOrDefault("show_load_order", "false"));
+            boolean generateMermaid = Boolean.parseBoolean(config.getOrDefault("generate_mermaid", "false"));
+            String mermaidOutputFile = config.getOrDefault("mermaid_output", "");
 
             if (!testMode && version.isEmpty()) {
                 throw new IllegalArgumentException("Параметр 'version' не может быть пустым для реального режима.");
@@ -76,16 +78,32 @@ public class Main {
                 for (int i = 0; i < loadOrder.size(); i++) {
                     System.out.println((i + 1) + ". " + loadOrder.get(i));
                 }
+            }
 
-                // Сравнение с реальным менеджером пакетов (для информации)
-                System.out.println("\nПримечание: Реальный менеджер пакетов (apt) может использовать");
-                System.out.println("другие алгоритмы разрешения зависимостей и учитывать:");
-                System.out.println("- Конфликты пакетов");
-                System.out.println("- Рекомендуемые зависимости");
-                System.out.println("- Альтернативные зависимости (через |)");
-                System.out.println("- Информацию о версиях");
-                System.out.println("- Предустановленные пакеты");
-                System.out.println("Поэтому возможны расхождения в порядке загрузки.");
+            // Генерация Mermaid диаграммы
+            if (generateMermaid) {
+                String mermaidCode = generateMermaidDiagram(root, transitiveGraph);
+                System.out.println("\n" + "=".repeat(80));
+                System.out.println("Mermaid диаграмма графа зависимостей:");
+                System.out.println("=".repeat(80));
+                System.out.println(mermaidCode);
+                System.out.println("=".repeat(80));
+
+                // Сохранение в файл если указан
+                if (!mermaidOutputFile.isEmpty()) {
+                    saveMermaidToFile(mermaidCode, mermaidOutputFile);
+                    System.out.println("Диаграмма сохранена в файл: " + mermaidOutputFile);
+                }
+
+                // Сравнение с реальными инструментами
+                System.out.println("\nСравнение с реальными инструментами визуализации:");
+                System.out.println("Реальные инструменты (apt-cache, debtree) могут показывать:");
+                System.out.println("- Все альтернативные зависимости (через |)");
+                System.out.println("- Обратные зависимости (что зависит от пакета)");
+                System.out.println("- Рекомендуемые и предлагаемые пакеты");
+                System.out.println("- Конфликтующие пакеты");
+                System.out.println("- Более детальную информацию о версиях");
+                System.out.println("- Разные стили визуализации (деревья, графы)");
             }
 
         } catch (IOException e) {
@@ -265,7 +283,6 @@ public class Main {
 
         tempVisited.add(node);
 
-        // Рекурсивно обрабатываем все зависимости
         if (graph.containsKey(node)) {
             for (String dependency : graph.get(node)) {
                 topologicalSort(dependency, graph, visited, tempVisited, result);
@@ -275,6 +292,57 @@ public class Main {
         tempVisited.remove(node);
         visited.add(node);
         result.add(node);
+    }
+
+    private static String generateMermaidDiagram(String root, Map<String, List<String>> graph) {
+        StringBuilder mermaid = new StringBuilder();
+        mermaid.append("graph TD\n");
+
+        // Собираем все узлы для правильного отображения изолированных узлов
+        Set<String> allNodes = new HashSet<>();
+        allNodes.add(root);
+        for (List<String> deps : graph.values()) {
+            allNodes.addAll(deps);
+        }
+
+        // Добавляем корневой узел с особым стилем
+        mermaid.append("    ").append(sanitizeNodeId(root)).append("[").append(root).append("]:::root\n");
+
+        // Добавляем остальные узлы
+        for (String node : allNodes) {
+            if (!node.equals(root)) {
+                mermaid.append("    ").append(sanitizeNodeId(node)).append("[").append(node).append("]:::dependency\n");
+            }
+        }
+
+        // Добавляем связи
+        for (Map.Entry<String, List<String>> entry : graph.entrySet()) {
+            String fromNode = entry.getKey();
+            for (String toNode : entry.getValue()) {
+                mermaid.append("    ")
+                        .append(sanitizeNodeId(fromNode))
+                        .append(" --> ")
+                        .append(sanitizeNodeId(toNode))
+                        .append("\n");
+            }
+        }
+
+        // Добавляем стили
+        mermaid.append("    classDef root fill:#e1f5fe,stroke:#01579b,stroke-width:2px\n");
+        mermaid.append("    classDef dependency fill:#f3e5f5,stroke:#4a148c,stroke-width:1px\n");
+
+        return mermaid.toString();
+    }
+
+    private static String sanitizeNodeId(String node) {
+        // Mermaid требует, чтобы ID узлов содержали только буквы, цифры и подчеркивания
+        return node.replaceAll("[^a-zA-Z0-9_]", "_");
+    }
+
+    private static void saveMermaidToFile(String mermaidCode, String filename) throws IOException {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filename))) {
+            writer.write(mermaidCode);
+        }
     }
 
     private static String extractField(String stanza, String field) {

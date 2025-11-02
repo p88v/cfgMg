@@ -1,0 +1,6 @@
+package = "X"
+url_or_path = "test_graph2.txt"
+test_mode = true
+filter_substring = "skip"
+generate_mermaid = true
+mermaid_output = "graph2.mmd"
